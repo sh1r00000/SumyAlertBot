@@ -16,17 +16,24 @@ async def get_alert_status():
     timeout = aiohttp.ClientTimeout(total=10)
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(STATUS_API_URL, headers=headers) as response:
+        async with session.get(
+            STATUS_API_URL,
+            headers=headers
+        ) as response:
 
             if response.status != 200:
                 text = await response.text()
-                raise Exception(f"API Error {response.status}: {text}")
+                raise Exception(
+                    f"API Error {response.status}: {text}"
+                )
 
             text = await response.text()
             status = text.strip().replace('"', "")
 
             if status not in ("A", "N", "P"):
-                raise Exception(f"Unknown API status: {status}")
+                raise Exception(
+                    f"Unknown API status: {status}"
+                )
 
             return status
 
@@ -39,13 +46,20 @@ async def get_sumy_alert():
     timeout = aiohttp.ClientTimeout(total=10)
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(DETAILS_API_URL, headers=headers) as response:
+        async with session.get(
+            DETAILS_API_URL,
+            headers=headers
+        ) as response:
 
             if response.status != 200:
                 text = await response.text()
-                raise Exception(f"API Error {response.status}: {text}")
+                raise Exception(
+                    f"API Error {response.status}: {text}"
+                )
 
             data = await response.json()
+
+    sumy_alerts = []
 
     for alert in data["alerts"]:
 
@@ -57,16 +71,38 @@ async def get_sumy_alert():
 
         started_at = (
             datetime.fromisoformat(
-                alert["started_at"].replace("Z", "+00:00")
-            ).astimezone(
+                alert["started_at"].replace(
+                    "Z",
+                    "+00:00"
+                )
+            )
+            .astimezone(
                 ZoneInfo("Europe/Kyiv")
-            ).replace(tzinfo=None)
+            )
+            .replace(tzinfo=None)
         )
 
-        return {
+        sumy_alerts.append({
             "location": alert["location_title"],
             "location_type": alert["location_type"],
             "started_at": started_at,
-        }
+        })
 
-    return None
+    if not sumy_alerts:
+        return None
+
+    # 1. Приоритет тревоги по всей области
+    for alert in sumy_alerts:
+        if alert["location"] == "Сумська область":
+            return alert
+
+    # 2. Приоритет тревоги по городу Сумы
+    for alert in sumy_alerts:
+        if alert["location"] in (
+            "м. Суми",
+            "Суми"
+        ):
+            return alert
+
+    # 3. Если тревога только в районе или громаде
+    return sumy_alerts[0]
