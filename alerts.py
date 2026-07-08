@@ -52,30 +52,7 @@ class AlertManager:
             logger.error(f"Ошибка получения данных API: {e}")
             return
 
-        # ---------- Первый запуск ----------
-        if self.previous_status is None:
-            self.previous_status = status
-
-            if status in ("A", "P") and alert:
-                self.alert_started = alert["started_at"]
-                self.current_location = self.location
-
-                save_alert_start(self.alert_started.isoformat())
-
-                await bot.send_message(
-                    channel,
-                    alert_started_message(
-                        self.location,
-                        self.alert_started
-                    ),
-                    parse_mode="HTML"
-                )
-
-                logger.info("🚨 Отправлено сообщение о начале тревоги.")
-
-            return
-
-        # ---------- Начало тревоги ----------
+        # ---------------- Начало тревоги ----------------
         if self.previous_status == "N" and status in ("A", "P"):
 
             if alert:
@@ -87,7 +64,9 @@ class AlertManager:
 
             self.current_location = self.location
 
-            save_alert_start(self.alert_started.isoformat())
+            save_alert_start(
+                self.alert_started.isoformat()
+            )
 
             await bot.send_message(
                 channel,
@@ -98,9 +77,11 @@ class AlertManager:
                 parse_mode="HTML"
             )
 
-            logger.info("🚨 Отправлено сообщение о начале тревоги.")
+            logger.info(
+                "🚨 Отправлено сообщение о начале тревоги."
+            )
 
-        # ---------- Изменение локации ----------
+        # ---------------- Изменение локации ----------------
         elif (
             self.previous_status in ("A", "P")
             and status in ("A", "P")
@@ -120,22 +101,29 @@ class AlertManager:
                 )
 
                 logger.info(
-                    f"Локация изменилась: {self.current_location} -> {self.location}"
+                    f"Локация изменилась: "
+                    f"{self.current_location} -> {self.location}"
                 )
 
                 self.current_location = self.location
 
-        # ---------- Отбой ----------
-        elif self.previous_status in ("A", "P") and status == "N":
+        # ---------------- Отбой ----------------
+        elif (
+            self.previous_status in ("A", "P")
+            and status == "N"
+        ):
 
             end_time = datetime.now(
-                    ZoneInfo("Europe/Kyiv")
-                ).replace(tzinfo=None)
+                ZoneInfo("Europe/Kyiv")
+            ).replace(tzinfo=None)
 
             if self.alert_started:
 
                 duration = int(
-                    (end_time - self.alert_started).total_seconds()
+                    (
+                        end_time
+                        - self.alert_started
+                    ).total_seconds()
                 )
 
                 save_alert_end(
@@ -153,7 +141,9 @@ class AlertManager:
                     parse_mode="HTML"
                 )
 
-                logger.info("✅ Отправлено сообщение об отбое тревоги.")
+                logger.info(
+                    "✅ Отправлено сообщение об отбое тревоги."
+                )
 
             else:
                 logger.warning(
