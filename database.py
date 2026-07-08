@@ -3,8 +3,7 @@ from pathlib import Path
 
 from logger import logger
 
-DB_PATH = Path("data/stats.db")
-
+DB_PATH = Path("/data/stats.db")
 
 def init_database():
     DB_PATH.parent.mkdir(exist_ok=True)
