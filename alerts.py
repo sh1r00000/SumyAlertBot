@@ -68,10 +68,21 @@ class AlertManager:
 
         # ---------------- Первый запуск ----------------
         if self.previous_status is None:
-            self.previous_status = status
 
             # Если бот запустился во время уже активной тревоги,
             # повторное сообщение не отправляем
+            if status in ("A", "P") and alert:
+                self.previous_status = "A"
+                self.alert_started = alert["started_at"]
+                self.current_location = alert["location"]
+
+                logger.info(
+                    f"Восстановлена активная тревога "
+                    f"c {self.alert_started}"
+                )
+            else:
+                self.previous_status = status
+                
             return
 
         # ---------------- Начало тревоги ----------------
