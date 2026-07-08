@@ -1,5 +1,6 @@
 import aiohttp
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from config import ALERTS_API_KEY
 
@@ -55,17 +56,17 @@ async def get_sumy_alert():
             continue
 
         started_at = (
-    datetime.fromisoformat(
-        alert["started_at"].replace("Z", "+00:00")
-    )
-    .astimezone()
-    .replace(tzinfo=None)
-)
+            datetime.fromisoformat(
+                alert["started_at"].replace("Z", "+00:00")
+            ).astimezone(
+                ZoneInfo("Europe/Kyiv")
+            ).replace(tzinfo=None)
+        )
 
         return {
-    "location": alert["location_title"],
-    "location_type": alert["location_type"],
-    "started_at": started_at,
-}
+            "location": alert["location_title"],
+            "location_type": alert["location_type"],
+            "started_at": started_at,
+        }
 
     return None

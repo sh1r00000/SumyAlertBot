@@ -1,4 +1,5 @@
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from api import get_alert_status, get_sumy_alert
 from messages import (
@@ -80,7 +81,9 @@ class AlertManager:
             if alert:
                 self.alert_started = alert["started_at"]
             else:
-                self.alert_started = datetime.now()
+                self.alert_started = datetime.now(
+                    ZoneInfo("Europe/Kyiv")
+                ).replace(tzinfo=None)
 
             self.current_location = self.location
 
@@ -125,7 +128,9 @@ class AlertManager:
         # ---------- Отбой ----------
         elif self.previous_status in ("A", "P") and status == "N":
 
-            end_time = datetime.now()
+            end_time = datetime.now(
+                    ZoneInfo("Europe/Kyiv")
+                ).replace(tzinfo=None)
 
             if self.alert_started:
 
