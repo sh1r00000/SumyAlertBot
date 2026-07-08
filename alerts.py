@@ -40,6 +40,20 @@ class AlertManager:
             if alert:
                 self.location = alert["location"]
 
+            # Восстановление времени начала тревоги после перезапуска Railway
+            if (
+                status in ("A", "P")
+                and self.alert_started is None
+                and alert
+            ):
+                self.alert_started = alert["started_at"]
+                self.current_location = alert["location"]
+
+                logger.info(
+                    f"Восстановлено время начала тревоги: "
+                    f"{self.alert_started}"
+                )
+
             if status not in ("A", "P", "N"):
                 logger.warning(f"Получен неизвестный статус: {status}")
                 return
@@ -50,6 +64,14 @@ class AlertManager:
 
         except Exception as e:
             logger.error(f"Ошибка получения данных API: {e}")
+            return
+
+        # ---------------- Первый запуск ----------------
+        if self.previous_status is None:
+            self.previous_status = status
+
+            # Если бот запустился во время уже активной тревоги,
+            # повторное сообщение не отправляем
             return
 
         # ---------------- Начало тревоги ----------------
