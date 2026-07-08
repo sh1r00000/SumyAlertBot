@@ -1,6 +1,7 @@
 import sqlite3
-from logger import logger
 from pathlib import Path
+
+from logger import logger
 
 DB_PATH = Path("data/stats.db")
 
@@ -17,6 +18,13 @@ def init_database():
             started_at TEXT NOT NULL,
             ended_at TEXT,
             duration INTEGER
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bot_state (
+            key TEXT PRIMARY KEY,
+            value TEXT
         )
     """)
 
@@ -46,7 +54,8 @@ def save_alert_end(end_time, duration):
         UPDATE alerts
         SET ended_at = ?, duration = ?
         WHERE id = (
-            SELECT id FROM alerts
+            SELECT id
+            FROM alerts
             WHERE ended_at IS NULL
             ORDER BY id DESC
             LIMIT 1
@@ -55,6 +64,7 @@ def save_alert_end(end_time, duration):
 
     conn.commit()
     conn.close()
+
 
 def get_active_alert():
     conn = sqlite3.connect(DB_PATH)
@@ -69,14 +79,39 @@ def get_active_alert():
     """)
 
     row = cursor.fetchone()
-
     conn.close()
 
-    if row:
-        return row[0]
+    return row[0] if row else None
 
-    return None
+
+def save_last_sent_status(status):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT OR REPLACE INTO bot_state(key, value)
+        VALUES('last_sent_status', ?)
+    """, (status,))
+
+    conn.commit()
+    conn.close()
+
+
+def get_last_sent_status():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT value
+        FROM bot_state
+        WHERE key='last_sent_status'
+    """)
+
+    row = cursor.fetchone()
+    conn.close()
+
+    return row[0] if row else None
+
 
 if __name__ == "__main__":
     init_database()
-    print("База данных создана.")

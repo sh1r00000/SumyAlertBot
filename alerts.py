@@ -11,6 +11,8 @@ from database import (
     save_alert_start,
     save_alert_end,
     get_active_alert,
+    save_last_sent_status,
+    get_last_sent_status,
 )
 from logger import logger
 
@@ -22,14 +24,18 @@ class AlertManager:
         self.current_location = None
         self.location = "Сумська область"
 
+        self.last_sent_status = get_last_sent_status()
+
         active_alert = get_active_alert()
 
         if active_alert:
-            self.alert_started = datetime.fromisoformat(active_alert)
-            self.previous_status = "A"
+            self.alert_started = datetime.fromisoformat(
+                active_alert
+            )
 
             logger.info(
-                f"Восстановлена активная тревога с {self.alert_started}"
+                f"Восстановлена активная тревога "
+                f"с {self.alert_started}"
             )
 
     async def check(self, bot, channel):
@@ -40,7 +46,7 @@ class AlertManager:
             if alert:
                 self.location = alert["location"]
 
-            # Восстановление времени начала тревоги после перезапуска Railway
+            # Восстановление времени начала тревоги
             if (
                 status in ("A", "P")
                 and self.alert_started is None
@@ -55,37 +61,81 @@ class AlertManager:
                 )
 
             if status not in ("A", "P", "N"):
-                logger.warning(f"Получен неизвестный статус: {status}")
+                logger.warning(
+                    f"Получен неизвестный статус: {status}"
+                )
                 return
 
             logger.info(
-                f"Предыдущий: {self.previous_status} | Новый: {status}"
+                f"Предыдущий: {self.previous_status} "
+                f"| Новый: {status}"
             )
 
         except Exception as e:
-            logger.error(f"Ошибка получения данных API: {e}")
+            logger.error(
+                f"Ошибка получения данных API: {e}"
+            )
             return
 
-        # ---------------- Первый запуск ----------------
+        # ---------- Первый запуск ----------
         if self.previous_status is None:
 
-            # Если бот запустился во время уже активной тревоги,
-            # повторное сообщение не отправляем
-            if status in ("A", "P") and alert:
-                self.previous_status = "A"
+            # Бот ранее отправил тревогу,
+            # но пока был выключен пришёл отбой
+            if (
+                self.last_sent_status == "A"
+                and status == "N"
+                and self.alert_started
+            ):
+                end_time = datetime.now(
+                    ZoneInfo("Europe/Kyiv")
+                ).replace(tzinfo=None)
+
+                duration = int(
+                    (
+                        end_time
+                        - self.alert_started
+                    ).total_seconds()
+                )
+
+                save_alert_end(
+                    end_time.isoformat(),
+                    duration
+                )
+
+                await bot.send_message(
+                    channel,
+                    alert_ended_message(
+                        self.location,
+                        self.alert_started,
+                        end_time
+                    ),
+                    parse_mode="HTML"
+                )
+
+                logger.info(
+                    "✅ Отправлен пропущенный "
+                    "отбой после перезапуска."
+                )
+
+                save_last_sent_status("N")
+
+                self.alert_started = None
+                self.current_location = None
+
+            elif status in ("A", "P") and alert:
                 self.alert_started = alert["started_at"]
                 self.current_location = alert["location"]
 
                 logger.info(
                     f"Восстановлена активная тревога "
-                    f"c {self.alert_started}"
+                    f"с {self.alert_started}"
                 )
-            else:
-                self.previous_status = status
-                
+
+            self.previous_status = status
             return
 
-        # ---------------- Начало тревоги ----------------
+        # ---------- Начало тревоги ----------
         if self.previous_status == "N" and status in ("A", "P"):
 
             if alert:
@@ -111,10 +161,14 @@ class AlertManager:
             )
 
             logger.info(
-                "🚨 Отправлено сообщение о начале тревоги."
+                "🚨 Отправлено сообщение "
+                "о начале тревоги."
             )
 
-        # ---------------- Изменение локации ----------------
+            save_last_sent_status("A")
+            self.last_sent_status = "A"
+
+        # ---------- Изменение локации ----------
         elif (
             self.previous_status in ("A", "P")
             and status in ("A", "P")
@@ -135,12 +189,13 @@ class AlertManager:
 
                 logger.info(
                     f"Локация изменилась: "
-                    f"{self.current_location} -> {self.location}"
+                    f"{self.current_location} "
+                    f"-> {self.location}"
                 )
 
                 self.current_location = self.location
 
-        # ---------------- Отбой ----------------
+        # ---------- Отбой ----------
         elif (
             self.previous_status in ("A", "P")
             and status == "N"
@@ -175,12 +230,17 @@ class AlertManager:
                 )
 
                 logger.info(
-                    "✅ Отправлено сообщение об отбое тревоги."
+                    "✅ Отправлено сообщение "
+                    "об отбое тревоги."
                 )
+
+                save_last_sent_status("N")
+                self.last_sent_status = "N"
 
             else:
                 logger.warning(
-                    "Получен отбой, но время начала неизвестно."
+                    "Получен отбой, "
+                    "но время начала неизвестно."
                 )
 
             self.alert_started = None
