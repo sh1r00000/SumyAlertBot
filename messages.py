@@ -14,51 +14,48 @@ def format_duration(start: datetime, end: datetime) -> str:
 
 
 def format_location(location: str) -> str:
-    if "область" in location:
-        return f"🌍 <b>{location}</b>"
-
-    if "район" in location:
-        return f"🏛️ <b>{location}</b>"
-
-    if "громада" in location:
-        return f"🏘️ <b>{location}</b>"
-
-    if location.startswith("м."):
+    if location in ("м. Суми", "Суми"):
         return f"🏙️ <b>{location}</b>"
 
-    return f"📍 <b>{location}</b>"
+    return f"🏛️ <b>{location}</b>"
 
 
-def alert_started_message(location: str, start_time: datetime) -> str:
+def alert_started_message(
+    location: str,
+    start_time: datetime
+) -> str:
     return (
         "🚨 <b>ПОВІТРЯНА ТРИВОГА</b>\n\n"
         f"{format_location(location)}\n"
-        f"🕒 <b>Початок:</b> {start_time.strftime('%H:%M')}\n\n"
-        "🛡 <b>Негайно пройдіть до найближчого укриття.</b>\n"
-        "🔕 Не ігноруйте сигнал повітряної тривоги.\n"
-        "📢 Слідкуйте за офіційними повідомленнями.\n\n"
-        "📢 <a href='https://t.me/sumy_alert1'>@sumy_alert1</a>"
+        f"🕒 <b>Початок:</b> "
+        f"{start_time.strftime('%H:%M')}\n\n"
+        "🛡 <b>Негайно пройдіть "
+        "до найближчого укриття.</b>\n"
+        "🔕 Не ігноруйте сигнал "
+        "повітряної тривоги.\n"
+        "📢 Слідкуйте за офіційними "
+        "повідомленнями.\n\n"
+        "📢 <a href='https://t.me/sumy_alert1'>"
+        "@sumy_alert1</a>"
     )
 
 
-def alert_updated_message(old_location: str, new_location: str) -> str:
-    return (
-        "🔄 <b>ОНОВЛЕННЯ ТРИВОГИ</b>\n\n"
-        f"📍 <b>Було:</b> {format_location(old_location)}\n"
-        f"📍 <b>Стало:</b> {format_location(new_location)}\n\n"
-        "⚠️ Зона повітряної тривоги змінилася.\n\n"
-        "📢 <a href='https://t.me/sumy_alert1'>@sumy_alert1</a>"
-    )
-
-
-def alert_ended_message(location: str, start_time: datetime, end_time: datetime) -> str:
+def alert_ended_message(
+    location: str,
+    start_time: datetime,
+    end_time: datetime
+) -> str:
     return (
         "✅ <b>ВІДБІЙ ПОВІТРЯНОЇ ТРИВОГИ</b>\n\n"
         f"{format_location(location)}\n\n"
-        f"🕒 <b>Початок:</b> {start_time.strftime('%H:%M')}\n"
-        f"🕒 <b>Відбій:</b> {end_time.strftime('%H:%M')}\n"
-        f"⏱ <b>Тривалість:</b> {format_duration(start_time, end_time)}\n\n"
+        f"🕒 <b>Початок:</b> "
+        f"{start_time.strftime('%H:%M')}\n"
+        f"🕒 <b>Відбій:</b> "
+        f"{end_time.strftime('%H:%M')}\n"
+        f"⏱ <b>Тривалість:</b> "
+        f"{format_duration(start_time, end_time)}\n\n"
         "💙 Бережіть себе!\n"
         "🙏 Дякуємо, що були уважними.\n\n"
-        "📢 <a href='https://t.me/sumy_alert1'>@sumy_alert1</a>"
+        "📢 <a href='https://t.me/sumy_alert1'>"
+        "@sumy_alert1</a>"
     )

@@ -28,14 +28,19 @@ async def get_sumy_alert():
 
             data = await response.json()
 
-    alerts = []
-
     for alert in data["alerts"]:
 
         if alert["alert_type"] != "air_raid":
             continue
 
         if alert["location_oblast"] != "Сумська область":
+            continue
+
+        if alert["location_title"] not in (
+            "Сумський район",
+            "м. Суми",
+            "Суми"
+        ):
             continue
 
         started_at = (
@@ -51,10 +56,9 @@ async def get_sumy_alert():
             .replace(tzinfo=None)
         )
 
-        alerts.append({
+        return {
             "location": alert["location_title"],
-            "location_type": alert["location_type"],
             "started_at": started_at,
-        })
+        }
 
-    return alerts
+    return None
