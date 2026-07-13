@@ -14,85 +14,130 @@ from database import (
 from logger import logger
 
 
+ALLOWED_LOCATIONS = {
+    "Сумський район",
+    "м. Суми",
+    "Суми",
+}
+
+
 class AlertManager:
     def __init__(self):
         self.active_alert = None
 
-        alerts = get_active_alerts()
+        stored_alerts = get_active_alerts()
 
-        if alerts:
-            location, started_at = alerts[0]
+        for location, started_at in stored_alerts:
+            # Удаляем старые записи других районов,
+            # оставшиеся в Railway Volume.
+            if location not in ALLOWED_LOCATIONS:
+                remove_active_alert(location)
 
-            self.active_alert = {
-                "location": location,
-                "started_at": datetime.fromisoformat(
+                logger.warning(
+                    "Удалена устаревшая тревога "
+                    "из базы: %s",
+                    location,
+                )
+
+                continue
+
+            try:
+                parsed_started_at = datetime.fromisoformat(
                     started_at
                 )
-            }
 
-            logger.info(
-                f"Восстановлена тревога: "
-                f"{location}"
-            )
+            except (TypeError, ValueError):
+                remove_active_alert(location)
+
+                logger.warning(
+                    "Удалена повреждённая запись "
+                    "тревоги: %s",
+                    location,
+                )
+
+                continue
+
+            # Нужна только одна активная тревога.
+            if self.active_alert is None:
+                self.active_alert = {
+                    "location": location,
+                    "started_at": parsed_started_at,
+                }
+
+                logger.info(
+                    "Восстановлена тревога: %s",
+                    location,
+                )
+
+            else:
+                remove_active_alert(location)
+
+                logger.warning(
+                    "Удалена лишняя активная "
+                    "тревога из базы: %s",
+                    location,
+                )
 
     async def check(self, bot, channel):
         try:
             alert = await get_sumy_alert()
 
-        except Exception as e:
-            logger.error(
-                f"Ошибка API: {e}"
+        except Exception as error:
+            logger.exception(
+                "Ошибка API тревог: %s",
+                error,
             )
             return
 
-        # ---------------- Начало тревоги ----------------
-        if (
-            alert
-            and self.active_alert is None
-        ):
+        # Начало тревоги
+        if alert and self.active_alert is None:
             self.active_alert = alert
 
             save_active_alert(
                 alert["location"],
-                alert["started_at"].isoformat()
+                alert["started_at"].isoformat(),
             )
 
             await bot.send_message(
-                channel,
-                alert_started_message(
+                chat_id=channel,
+                text=alert_started_message(
                     alert["location"],
-                    alert["started_at"]
+                    alert["started_at"],
                 ),
-                parse_mode="HTML"
+                parse_mode="HTML",
             )
 
             logger.info(
-                f"🚨 Тревога: "
-                f"{alert['location']}"
+                "🚨 Тревога: %s",
+                alert["location"],
             )
 
-        # ---------------- Отбой ----------------
-        elif (
-            not alert
-            and self.active_alert
-        ):
+            return
+
+        # Пока хотя бы одна тревога для Сум или
+        # Сумского района активна — ничего не меняем.
+        if alert and self.active_alert:
+            return
+
+        # Отбой
+        if not alert and self.active_alert:
             end_time = datetime.now(
                 ZoneInfo("Europe/Kyiv")
             ).replace(tzinfo=None)
 
             await bot.send_message(
-                channel,
-                alert_ended_message(
+                chat_id=channel,
+                text=alert_ended_message(
                     self.active_alert["location"],
                     self.active_alert["started_at"],
-                    end_time
+                    end_time,
                 ),
-                parse_mode="HTML"
+                parse_mode="HTML",
             )
 
             logger.info(
-                f"✅ Отбой: "
-                f"{self.active_alert['location']}"
+                "✅ Отбой: %s",
+                self.active_alert["location"],
             )
 
             remove_active_alert(
