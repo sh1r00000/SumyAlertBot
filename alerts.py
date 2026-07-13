@@ -11,6 +11,7 @@ from database import (
     remove_active_alert,
     get_active_alerts,
 )
+from local_threat_state import set_drone_active
 from logger import logger
 
 
@@ -89,7 +90,7 @@ class AlertManager:
             )
             return
 
-        # Начало тревоги
+        # Начало воздушной тревоги
         if alert and self.active_alert is None:
             self.active_alert = alert
 
@@ -114,12 +115,12 @@ class AlertManager:
 
             return
 
-        # Пока хотя бы одна тревога для Сум или
-        # Сумского района активна — ничего не меняем.
+        # Пока тревога для Сум или Сумского района
+        # остаётся активной — ничего не отправляем.
         if alert and self.active_alert:
             return
 
-        # Отбой
+        # Официальный отбой воздушной тревоги
         if not alert and self.active_alert:
             end_time = datetime.now(
                 ZoneInfo("Europe/Kyiv")
@@ -143,5 +144,9 @@ class AlertManager:
             remove_active_alert(
                 self.active_alert["location"]
             )
+
+            # После официального отбоя сбрасываем
+            # внутренний статус локальной угрозы БпЛА.
+            set_drone_active(False)
 
             self.active_alert = None
