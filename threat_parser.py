@@ -8,7 +8,6 @@ from typing import Optional
 
 CLEAR_PATTERNS = (
     r"\bвідбій\b",
-    r"\bвідбій\s+загроз\w*\b",
     r"\bзагроз\w*\s+минула\b",
     r"\bне\s+фіксу\w*\b",
     r"\bбільше\s+не\s+фіксу\w*\b",
@@ -60,22 +59,22 @@ GENERAL_THREAT_PATTERNS = (
 # =========================
 
 SUMY_TARGET_PATTERNS = (
-    # Город Сумы во всех основных падежах
+    # Город Сумы
     r"\bсуми\b",
-    r"\bсум\b",
     r"\bсумах\b",
     r"\bсумами\b",
     r"\bсумам\b",
     r"\bм\.?\s*суми\b",
     r"\bміст\w*\s+суми\b",
 
-    # Сумщина во всех падежах
+    # Формы вроде «до Сум», «на Сум»
+    r"\b(?:на|до|у|в|для|біля|поблизу)\s+сум\b",
+
+    # Сумщина
     r"\bсумщин\w*\b",
 
-    # Сумская область — украинские формы
+    # Сумская область
     r"\bсумськ\w*\s+област\w*\b",
-
-    # Сумская область — русские формы
     r"\bсумск\w*\s+област\w*\b",
 
     # Сумский район
@@ -86,14 +85,13 @@ SUMY_TARGET_PATTERNS = (
     r"\bсумськ\w*\s+напрям\w*\b",
     r"\bсумск\w*\s+направлен\w*\b",
 
-    # Направление или курс на Сумы
+    # Курс и направление на Сумы
     r"\bнапрям\w*\s+(?:на|до)\s+сум(?:и|ах|ами|ам)?\b",
     r"\bкурс\w*\s+(?:на|до)\s+сум(?:и|ах|ами|ам)?\b",
 )
 
 
-# Населённые пункты Сумского района,
-# которые могут встречаться в сообщениях Воздушных сил
+# Населённые пункты Сумского района
 LOCAL_TARGET_PATTERNS = (
     r"\bбездрик\w*\b",
     r"\bбілопілл\w*\b",
@@ -129,9 +127,6 @@ def _matches(text: str, patterns: tuple[str, ...]) -> bool:
 
 
 def _clean_line(line: str) -> str:
-    line = " ".join(line.split()).strip()
-
-    # Удаляем ссылки
     line = re.sub(
         r"https?://\S+|t\.me/\S+",
         "",
@@ -139,7 +134,7 @@ def _clean_line(line: str) -> str:
         flags=re.IGNORECASE,
     )
 
-    return line.strip()
+    return " ".join(line.split()).strip()
 
 
 def _detect_event_type(text: str) -> Optional[str]:
@@ -171,58 +166,105 @@ def _is_target_line(line: str) -> bool:
     )
 
 
-def extract_sumy_event(message: str) -> Optional[dict]:
+def extract_sumy_events(message: str) -> list[dict]:
     """
-    Извлекает из официального сообщения только строки,
-    которые относятся к Сумам, Сумскому району
-    или Сумской области.
+    Извлекает из одного сообщения все отдельные события,
+    относящиеся к Сумам, Сумскому району или Сумщине.
 
-    Пример:
+    Тип угрозы определяется для каждой строки отдельно.
 
-        БпЛА на Харківщині.
-        БпЛА курсом на Суми.
-        КАБи на Сумщину.
-
-    В канал попадут только две последние строки.
+    Если строка с географией не содержит тип угрозы,
+    используется ближайшая предыдущая строка-контекст.
     """
 
-    raw_lines = (message or "").splitlines()
-
-    lines = []
-
-    for raw_line in raw_lines:
-        clean_line = _clean_line(raw_line)
-
-        if clean_line:
-            lines.append(clean_line)
-
-    if not lines:
-        return None
-
-    full_text = " ".join(lines)
-    event_type = _detect_event_type(full_text)
-
-    if event_type is None:
-        return None
-
-    relevant_lines = [
-        line
-        for line in lines
-        if _is_target_line(line)
+    lines = [
+        cleaned
+        for raw_line in (message or "").splitlines()
+        if (cleaned := _clean_line(raw_line))
     ]
 
-    if not relevant_lines:
-        return None
+    if not lines:
+        return []
 
-    # Убираем одинаковые строки,
-    # сохраняя первоначальный порядок
-    unique_lines = []
+    # Если во всём сообщении найден только один конкретный
+    # тип угрозы, его можно использовать как запасной.
+    explicit_types = [
+        event_type
+        for line in lines
+        if (
+            event_type := _detect_event_type(line)
+        ) not in (None, "general")
+    ]
 
-    for line in relevant_lines:
-        if line not in unique_lines:
-            unique_lines.append(line)
+    unique_explicit_types = list(
+        dict.fromkeys(explicit_types)
+    )
 
-    return {
-        "type": event_type,
-        "lines": unique_lines,
-    }
+    fallback_type = (
+        unique_explicit_types[0]
+        if len(unique_explicit_types) == 1
+        else None
+    )
+
+    grouped: dict[str, list[str]] = {}
+
+    current_type: Optional[str] = None
+    current_context: Optional[str] = None
+
+    for line in lines:
+        explicit_type = _detect_event_type(line)
+
+        # Запоминаем ближайший заголовок или строку
+        # с конкретным типом угрозы.
+        if explicit_type and explicit_type != "general":
+            current_type = explicit_type
+            current_context = line
+
+        elif (
+            explicit_type == "general"
+            and current_type is None
+        ):
+            current_type = "general"
+            current_context = line
+
+        # Строки не про Сумы пропускаем.
+        if not _is_target_line(line):
+            continue
+
+        if explicit_type and explicit_type != "general":
+            event_type = explicit_type
+        else:
+            event_type = (
+                current_type
+                or fallback_type
+                or explicit_type
+            )
+
+        if event_type is None:
+            continue
+
+        event_lines = grouped.setdefault(
+            event_type,
+            [],
+        )
+
+        # Если перед строкой был заголовок вроде
+        # «Рух ударних БпЛА:», добавляем его для понятности.
+        if (
+            current_context
+            and current_context != line
+            and current_context not in event_lines
+        ):
+            event_lines.append(current_context)
+
+        if line not in event_lines:
+            event_lines.append(line)
+
+    return [
+        {
+            "type": event_type,
+            "lines": event_lines,
+        }
+        for event_type, event_lines in grouped.items()
+        if event_lines
+    ]

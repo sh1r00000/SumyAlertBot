@@ -6,13 +6,13 @@ from telethon.sessions import StringSession
 
 from config import API_HASH, API_ID, TELEGRAM_SESSION
 from logger import logger
-from threat_parser import extract_sumy_event
+from threat_parser import extract_sumy_events
 
 
-# Используем только официальный канал Воздушных сил
 SOURCE_CHANNEL = "kpszsu"
 
-# Полностью одинаковое сообщение повторно не публикуем 3 минуты
+# Полностью одинаковый текст не публикуем
+# повторно в течение трёх минут.
 DUPLICATE_SECONDS = 3 * 60
 
 recent_messages: dict[str, float] = {}
@@ -31,7 +31,13 @@ EVENT_ICONS = {
 def _normalize_text(text: str) -> str:
     text = text.casefold()
     text = re.sub(r"\s+", " ", text)
-    text = re.sub(r"[^\wа-яіїєґ0-9 ]", "", text)
+
+    text = re.sub(
+        r"[^\wа-яіїєґ0-9 ]",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
 
     return text.strip()
 
@@ -71,10 +77,6 @@ def _is_duplicate(text: str) -> bool:
 
 
 def _strip_leading_symbols(text: str) -> str:
-    """
-    Убирает начальные эмодзи и стрелки,
-    потому что мы добавляем свою иконку.
-    """
     return re.sub(
         r"^[^\wА-Яа-яІіЇїЄєҐґ0-9]+",
         "",
@@ -82,16 +84,23 @@ def _strip_leading_symbols(text: str) -> str:
     ).strip()
 
 
-def _build_channel_message(event: dict) -> str:
-    event_type = event["type"]
-    lines = event["lines"]
+def _build_channel_message(
+    event_data: dict,
+) -> str:
+    event_type = event_data["type"]
+    lines = event_data["lines"]
 
-    icon = EVENT_ICONS.get(event_type, "⚠️")
+    icon = EVENT_ICONS.get(
+        event_type,
+        "⚠️",
+    )
 
     cleaned_lines = [
-        _strip_leading_symbols(line)
+        cleaned
         for line in lines
-        if _strip_leading_symbols(line)
+        if (
+            cleaned := _strip_leading_symbols(line)
+        )
     ]
 
     body = "\n".join(cleaned_lines)
@@ -102,15 +111,18 @@ def _build_channel_message(event: dict) -> str:
     )
 
 
-async def start_telegram_monitor(bot, channel: str) -> None:
+async def start_telegram_monitor(
+    bot,
+    channel: str,
+) -> None:
     if not API_ID:
         raise RuntimeError("Не указан API_ID")
 
     if not API_HASH:
         raise RuntimeError("Не указан API_HASH")
 
-    # Railway использует строку TELEGRAM_SESSION.
-    # Локально используется файл sumy_monitor.session.
+    # На Railway используется TELEGRAM_SESSION.
+    # На компьютере — файл sumy_monitor.session.
     if TELEGRAM_SESSION:
         session = StringSession(
             TELEGRAM_SESSION.strip()
@@ -124,49 +136,75 @@ async def start_telegram_monitor(bot, channel: str) -> None:
         API_HASH,
     )
 
-    @client.on(
-        events.NewMessage(chats=[SOURCE_CHANNEL])
-    )
-    async def handler(event) -> None:
+    async def process_message(event) -> None:
         try:
             message = event.raw_text or ""
 
             if not message.strip():
                 return
 
-            sumy_event = extract_sumy_event(message)
-
-            if sumy_event is None:
-                return
-
-            channel_message = _build_channel_message(
-                sumy_event
+            # Одно сообщение может содержать несколько
+            # различных угроз для Сум.
+            sumy_events = extract_sumy_events(
+                message
             )
 
-            if _is_duplicate(channel_message):
-                logger.info(
-                    "Пропущен полный дубль сообщения Воздушных сил."
+            if not sumy_events:
+                return
+
+            for event_data in sumy_events:
+                channel_message = (
+                    _build_channel_message(
+                        event_data
+                    )
                 )
-                return
 
-            await bot.send_message(
-                chat_id=channel,
-                text=channel_message,
-            )
+                if _is_duplicate(channel_message):
+                    logger.info(
+                        "Пропущен дубль сообщения "
+                        "Воздушных сил: type=%s",
+                        event_data["type"],
+                    )
 
-            logger.info(
-                "Опубликовано официальное сообщение: type=%s",
-                sumy_event["type"],
-            )
+                    continue
+
+                await bot.send_message(
+                    chat_id=channel,
+                    text=channel_message,
+                )
+
+                logger.info(
+                    "Опубликовано официальное "
+                    "сообщение: type=%s",
+                    event_data["type"],
+                )
 
         except Exception as error:
             logger.exception(
-                "Ошибка обработки сообщения Воздушных сил: %s",
+                "Ошибка обработки сообщения "
+                "Воздушных сил: %s",
                 error,
             )
 
+    # Новые публикации.
+    client.add_event_handler(
+        process_message,
+        events.NewMessage(
+            chats=[SOURCE_CHANNEL]
+        ),
+    )
+
+    # Редактирование уже опубликованных сообщений.
+    client.add_event_handler(
+        process_message,
+        events.MessageEdited(
+            chats=[SOURCE_CHANNEL]
+        ),
+    )
+
     logger.info(
-        "Подключение к официальному каналу Воздушных сил..."
+        "Подключение к официальному "
+        "каналу Воздушных сил..."
     )
 
     try:
@@ -179,7 +217,9 @@ async def start_telegram_monitor(bot, channel: str) -> None:
             )
 
         logger.info(
-            "Официальный монитор Воздушных сил запущен."
+            "Официальный монитор Воздушных сил "
+            "запущен. Отслеживаются новые "
+            "и отредактированные сообщения."
         )
 
         await client.run_until_disconnected()
@@ -188,5 +228,6 @@ async def start_telegram_monitor(bot, channel: str) -> None:
         await client.disconnect()
 
         logger.info(
-            "Официальный монитор Воздушных сил остановлен."
+            "Официальный монитор "
+            "Воздушных сил остановлен."
         )
